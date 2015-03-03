@@ -1,4 +1,4 @@
-# GPUclass
+# GPUclass NUCAR 2015
 
 The GPU class material is distributed here. The material is organized 
 according to the Lectures.
