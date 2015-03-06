@@ -13,11 +13,32 @@
  */
 int GetPlatform(cl_platform_id *platform)
 {
+	cl_int status = 0;
+
 	// Get the number of platforms
+	cl_uint num_platform = 0;
 
 	// Get all the available platforms
+	cl_platform_id *platforms = NULL;
 
 	// Choose the AMD platform
+	for (cl_uint i = 0; i < num_platform; ++i)
+	{
+		char buf[100];
+		status = clGetPlatformInfo(
+				platforms[i],
+				CL_PLATFORM_VENDOR,
+				sizeof buf,
+				buf,
+				NULL);
+		assert(status == CL_SUCCESS);
+		if (!strncmp(buf, "Advanced Micro Devices, Inc.", 100))
+		{
+			*platform = platforms[i];
+			break;
+		}
+	}
+	free(platforms);
 
 	assert(*platform != NULL);
 	return 0;
