@@ -121,37 +121,58 @@ int CreateCommandQueue(cl_command_queue *cmd_q, cl_context ctx,
 }
 
 /*
- * \brief Create device buffers from host buffers.
+ * \brief Create device buffers.
  */
 int CreateBuffer(cl_mem *a_dev, cl_mem *b_dev, cl_mem *c_dev, cl_context ctx, 
-		void *a_host, void *b_host, void *c_host, const size_t size)
+		const size_t size)
 {
 	cl_int status = 0;
 	*a_dev = clCreateBuffer(
 			ctx, 
-			CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+			CL_MEM_READ_WRITE,
 			size,
-			a_host, 
+			NULL, 
 			&status);
 	assert(status == CL_SUCCESS);
 	*b_dev = clCreateBuffer(
 			ctx, 
-			CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+			CL_MEM_READ_WRITE,
 			size,
-			b_host, 
+			NULL, 
 			&status);
 	assert(status == CL_SUCCESS);
 	*c_dev = clCreateBuffer(
 			ctx, 
-			CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+			CL_MEM_READ_WRITE,
 			size,
-			c_host, 
+			NULL, 
 			&status);
 	assert(status == CL_SUCCESS);
 
 	assert(*a_dev != NULL);
 	assert(*b_dev != NULL);
 	assert(*c_dev != NULL);
+	return 0;
+}
+
+/*
+ * \brief Enqueue a command to write the input to GPU. Wait till it completes.
+ */
+int WriteToGPU(cl_command_queue cmd_q, cl_mem buf_dev, float *buf_host, 
+		int size)
+{
+	cl_int status = clEnqueueWriteBuffer(
+			cmd_q,
+			buf_dev,
+			CL_TRUE,
+			0,
+			size,
+			buf_host,
+			0,
+			NULL,
+			NULL);
+	assert(status == CL_SUCCESS);
+
 	return 0;
 }
 
@@ -174,7 +195,7 @@ int CreateProgram(cl_program *program, cl_context ctx, cl_device_id dev)
 	fread(src, sizeof(char), file_size, f);
 	fclose(f);
 
-	// Create a program executable for the devices specified
+	// Create a program
 	const char *srcs[] = {src};
 	const size_t src_sizes[] = {src_size};
 	cl_int status = 0;
@@ -186,7 +207,7 @@ int CreateProgram(cl_program *program, cl_context ctx, cl_device_id dev)
 			&status);
 	assert(status == CL_SUCCESS);
 
-	// Build the program
+	// Build the program for the device specified
 	status = clBuildProgram(*program, 1, &dev, NULL, NULL, NULL);
 	assert(status == CL_SUCCESS);
 
@@ -247,7 +268,7 @@ int SetKernelArg(cl_kernel kernel, cl_mem c_dev, cl_mem a_dev, cl_mem b_dev,
  */
 int RunKernel(cl_command_queue cmd_q, cl_kernel kernel, int num_elem)
 {
-	const size_t global_size[1] = {num_elem};
+	const size_t global_size[1] = {(num_elem + 255) / 256 * 256};
 	const size_t local_size[1] = {256};
 
 	cl_int status = clEnqueueNDRangeKernel(
@@ -360,13 +381,13 @@ int main(int argc, char *argv[])
 	Print1DArray("B", b_host, num_elem);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 1 Getting Platform
+	// STEP 1 Get platform
 	////////////////////////////////////////////////////////////////////
 	cl_platform_id platform = NULL;
 	GetPlatform(&platform);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 2 Creating context using the platform selected
+	// STEP 2 Create context using the platform selected
 	//        Context created from type includes all available
 	//        devices of the specified type from the selected platform
 	////////////////////////////////////////////////////////////////////
@@ -374,32 +395,33 @@ int main(int argc, char *argv[])
 	CreateContext(&ctx, platform);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 3 Getting Device available in the created context
+	// STEP 3 Get device
 	////////////////////////////////////////////////////////////////////
 	cl_device_id device = NULL;
 	GetDevice(&device, ctx);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 4 Creating command queue for a single device
+	// STEP 4 Create command queue for a single device
 	//        Each device in the context can have a 
-	//        dedicated commandqueue object for itself
+	//        dedicated command queue object for itself
 	////////////////////////////////////////////////////////////////////
 	cl_command_queue cmd_q = NULL;
 	CreateCommandQueue(&cmd_q, ctx, device);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 5 Creating device buffer from host buffer
+	// STEP 5 Create device buffer and write the inputs to GPU
 	//        These buffer objects can be passed to the kernel
 	//        as kernel arguments
 	////////////////////////////////////////////////////////////////////
 	cl_mem a_dev = NULL;
 	cl_mem b_dev = NULL;
 	cl_mem c_dev = NULL;
-	CreateBuffer(&a_dev, &b_dev, &c_dev, ctx, a_host, b_host, c_host, 
-			num_elem * sizeof(float));
+	CreateBuffer(&a_dev, &b_dev, &c_dev, ctx, num_elem * sizeof(float));
+	WriteToGPU(cmd_q, a_dev, a_host, num_elem * sizeof(float));
+	WriteToGPU(cmd_q, b_dev, b_host, num_elem * sizeof(float));
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 6 Building Program and Getting Kernel
+	// STEP 6 Get program and kernel
 	////////////////////////////////////////////////////////////////////
 	cl_program program = NULL;
 	CreateProgram(&program, ctx, device);
@@ -418,7 +440,7 @@ int main(int argc, char *argv[])
 	RunKernel(cmd_q, kernel, num_elem);
 
 	////////////////////////////////////////////////////////////////////
-	// STEP 9 Enqueue a command to read the output back
+	// STEP 9 Enqueue a command to read the output back from GPU
 	//        Wait till the readback completes
 	////////////////////////////////////////////////////////////////////
 	ReadFromGPU(cmd_q, c_dev, c_host, num_elem * sizeof(float));
