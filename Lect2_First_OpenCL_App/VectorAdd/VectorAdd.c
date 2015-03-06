@@ -283,7 +283,7 @@ int RunKernel(cl_command_queue cmd_q, cl_kernel kernel, int num_elem)
 			NULL);
 	assert(status == CL_SUCCESS);
 
-	// wait for the kernel call to finish execution
+	// Wait for the kernel call to finish execution
 	status = clFinish(cmd_q);
 	assert(status == CL_SUCCESS);
 
