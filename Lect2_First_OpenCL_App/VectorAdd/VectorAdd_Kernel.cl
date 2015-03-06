@@ -5,6 +5,7 @@ __kernel void VectorAddKernel(__global float *c,
 {
 	size_t wid = get_global_id(0);
 
-	c[wid] = a[wid] + b[wid];
+	if (wid < n)
+		c[wid] = a[wid] + b[wid];
 }
 
