@@ -26,7 +26,10 @@ cl_float* input = NULL;
 cl_float* output = NULL;
 cl_float* coeff = NULL;
 cl_float* historyInput = NULL;
+cl_event event;
 
+
+float* cpu_compute(float *input, float* coeff, unsigned int numTap, unsigned int numData);
 
 int main(int argc , char** argv) {
 
@@ -71,11 +74,11 @@ int main(int argc , char** argv) {
 		coeff[i] = 1.0f * rand() /numTap;
 		historyInput[i] = 0.0f;
 	}
+	
+	// Perform serial CPU computation
+	float *cpu_out = cpu_compute(input, coeff, numTap, numData);
 
-
-	// Event Creation
-	cl_event event;
-
+	
 	/** Input read from data file, for streaming application
 	 *
 	// Read the input file
@@ -302,3 +305,39 @@ int main(int argc , char** argv) {
 
 	return 0;
 }
+
+
+float* cpu_compute(float *input, float* coeff, unsigned int numTap, unsigned int numData)
+{
+	float *out_cpu, *temp_in;
+	out_cpu = (float*) malloc (numData * sizeof(float));
+	temp_in = (float*) calloc ((numData + numTap - 1) , sizeof(float));
+	
+	memcpy((temp_in + numTap - 1) , input, sizeof(float) * numData);
+	float sum;
+	for(int i = 0; i < numData; i++)
+	{
+		sum = 0.f;
+		for(int j = 0; j < numTap; j++)
+			sum += coeff[j] * temp_in[i + j];
+		out_cpu[i] = sum;
+	}
+	
+	free(temp_in);
+	return out_cpu;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
