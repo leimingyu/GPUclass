@@ -4,6 +4,7 @@
 #include <string.h>
 #include <CL/cl.h>
 #include <math.h>
+#include <stdbool.h>
 #define CHECK_STATUS( status, message )   \
 		if(status != CL_SUCCESS) \
 		{ \
