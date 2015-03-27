@@ -25,7 +25,7 @@ cl_uint numBlocks = 0;
 cl_float* input = NULL;
 cl_float* output = NULL;
 cl_float* coeff = NULL;
-cl_float* temp_output = NULL;
+cl_float* historyInput = NULL;
 
 
 int main(int argc , char** argv) {
@@ -41,7 +41,7 @@ int main(int argc , char** argv) {
 	}
 	if (argc > 1)
 	{
-		numTaps = atoi(argv[1]);
+		numTap = atoi(argv[1]);
 		numData = atoi(argv[2]);
 	}
 
@@ -51,13 +51,13 @@ int main(int argc , char** argv) {
 	numTotalData = numData * numBlocks;
 	local = 64;
 
-	printf("FIR Filter\n Data Samples : %d \n NumTaps : %d \n Local Workgroups : %d\n", numData, numTaps, local);
+	printf("FIR Filter\n Data Samples : %d \n NumTaps : %d \n Local Workgroups : %d\n", numData, numTap, local);
 	
 	/** Define variables here */
-	input = (cl_float *) malloc( numTotalData* sizeof(cl_float) ;
+	input = (cl_float *) malloc( numTotalData* sizeof(cl_float));
 	output = (cl_float *) malloc( numTotalData* sizeof(cl_float) );
 	coeff = (cl_float *) malloc( numTap * sizeof(cl_float) );
-	temp_output = (cl_float *) malloc( (numData+numTap-1) * sizeof(cl_float) );
+	historyInput = (cl_float *) malloc( (numData+numTap-1) * sizeof(cl_float) );
 
 	/** Initialize the input data */
 	for( i=0; i < numTotalData; i++ )
@@ -67,10 +67,11 @@ int main(int argc , char** argv) {
 	}
 
 	for( i=0; i < numTap; i++ )
+	{
 		coeff[i] = 1.0f * rand() /numTap;
+		historyInput[i] = 0.0f;
+	}
 
-	for( i=0; i < (numData + numTap - 1); i++)
-		temp_output[i] = 0.0f;
 
 	// Event Creation
 	cl_event event;
@@ -138,9 +139,6 @@ int main(int argc , char** argv) {
 
 
 	// Create memory buffers on the device for each vector
-	cl_mem inputBuffer = clCreateBuffer(context, CL_MEM_READ_ONLY,
-			sizeof(cl_float) * numData, NULL, &ret);
-	CHECK_STATUS( ret,"Error: Create input Buffer\n");
 	cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE,
 			sizeof(cl_float) * numData, NULL, &ret);
 	CHECK_STATUS( ret,"Error: Create output Buffer\n");
@@ -184,12 +182,12 @@ int main(int argc , char** argv) {
 
 	// Fill History Buffer
 	/* Insert your code here */
+	
 
 	// Decide the local group formation
 	size_t globalThreads[1]={numData};
 	size_t localThreads[1]={local};
-	cl_command_type cmdType;
-	//count = 0;
+	count = 0;
 
 	/* Fill in the input buffer object */
 	/* Insert your code here */
@@ -221,6 +219,9 @@ int main(int argc , char** argv) {
 			NULL,
 			NULL);
 
+
+
+
 	/* Uncomment to print output */
 	//printf("\n The Output:\n");
 	//i = 0;
@@ -232,15 +233,17 @@ int main(int argc , char** argv) {
 	//}
 	//
 	
+	
 	for (i = 0; i < numData; i++) 
 	{
-			if (isnan(output[i])) {
-					ret = 1;
-					break;
-			}
-			else
-					ret = 0;
+		if (isnan(output[i])) {
+			ret = 1;
+			break;
+		}
+		else
+			ret = 0;
 	}
+
 	if(ret)
 		printf("FIR Fail\n");
 	else
@@ -252,7 +255,6 @@ int main(int argc , char** argv) {
 	ret = clFinish(command_queue);
 	ret = clReleaseKernel(kernel);
 	ret = clReleaseProgram(program);
-	ret = clReleaseMemObject(inputBuffer);
 	ret = clReleaseMemObject(outputBuffer);
 	ret = clReleaseMemObject(coeffBuffer);
 	ret = clReleaseMemObject(tempInputBuffer);
@@ -262,7 +264,7 @@ int main(int argc , char** argv) {
 	free(input);
 	free(output);
 	free(coeff);
-	free(temp_output);
+	free(historyInput);
 
 
 	return 0;
