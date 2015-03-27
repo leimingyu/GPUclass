@@ -207,6 +207,26 @@ int main(int argc , char** argv) {
 	CHECK_STATUS( ret,"Error: Range kernel. (clCreateKernel)\n");			
 	ret = clWaitForEvents(1, &event);
 
+	// Print kernel execution time
+	cl_ulong t_start = 0;
+	status = clGetEventProfilingInfo(
+			event, 
+			CL_PROFILING_COMMAND_START, 
+			sizeof(cl_ulong), 
+			&t_start, 
+			NULL);
+	CHECK_STATUS(status, "Profiling event fail\n");
+	cl_ulong t_end = 0;
+	status = clGetEventProfilingInfo(
+			event, 
+			CL_PROFILING_COMMAND_END, 
+			sizeof(cl_ulong), 
+			&t_end, 
+			NULL);
+	CHECK_STATUS(status, "Profiling event fail\n");
+	fprintf(stderr, "\tKernel exec time: %8.2f us\n", 
+			1.f * (t_end - t_start) / 1e3);
+
 	/* Get the output buffer */
 	ret = clEnqueueReadBuffer(
 			command_queue,
