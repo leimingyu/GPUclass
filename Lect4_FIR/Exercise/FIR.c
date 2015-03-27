@@ -4,6 +4,7 @@
 #include <string.h>
 #include <CL/cl.h>
 #include <math.h>
+#include <stdbool.h>
 #define CHECK_STATUS( status, message )   \
 		if(status != CL_SUCCESS) \
 		{ \
@@ -26,7 +27,9 @@ cl_float* input = NULL;
 cl_float* output = NULL;
 cl_float* coeff = NULL;
 cl_float* historyInput = NULL;
+cl_event event;
 
+float* cpu_compute(float *input, float* coeff, unsigned int numTap, unsigned int numData);
 
 int main(int argc , char** argv) {
 
@@ -72,9 +75,8 @@ int main(int argc , char** argv) {
 		historyInput[i] = 0.0f;
 	}
 
-
-	// Event Creation
-	cl_event event;
+	// Perform serial CPU computation
+	float *cpu_out = cpu_compute(input, coeff, numTap, numData);
 
 	/** Input read from data file, for streaming application
 	 *
@@ -255,17 +257,17 @@ int main(int argc , char** argv) {
 	//
 	
 	
+	bool passed = false;
 	for (i = 0; i < numData; i++) 
 	{
-		if (isnan(output[i])) {
-			ret = 1;
+		if ((output[i]) != cpu_out[i]) {
+			passed = false;
 			break;
 		}
 		else
-			ret = 0;
+			passed = true;
 	}
-
-	if(ret)
+	if(!passed)
 		printf("FIR Fail\n");
 	else
 		printf("FIR Successful\n");
@@ -286,7 +288,22 @@ int main(int argc , char** argv) {
 	free(output);
 	free(coeff);
 	free(historyInput);
+	free(cpu_out);
 
 
 	return 0;
+}
+
+float* cpu_compute(float *input, float* coeff, unsigned int numTap, unsigned int numData)
+{
+	float *out_cpu, *temp_in;
+	out_cpu = (float*) malloc (numData * sizeof(float));
+	temp_in = (float*) calloc ((numData + numTap - 1) , sizeof(float));
+	memcpy((temp_in + numTap - 1) , input, sizeof(float) * numData);
+	
+	/* insert your code here */
+	
+	
+	free(temp_in);
+	return out_cpu;
 }
