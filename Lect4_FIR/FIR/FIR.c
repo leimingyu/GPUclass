@@ -270,17 +270,17 @@ int main(int argc , char** argv) {
 	//}
 	//
 	
-	
+	bool passed = false;
 	for (i = 0; i < numData; i++) 
 	{
-		if (isnan(output[i])) {
-			ret = 1;
+		if ((output[i]) != cpu_out[i]) {
+			passed = false;
 			break;
 		}
 		else
-			ret = 0;
+			passed = true;
 	}
-	if(ret)
+	if(!passed)
 		printf("FIR Fail\n");
 	else
 		printf("FIR Successful\n");
@@ -301,6 +301,7 @@ int main(int argc , char** argv) {
 	free(output);
 	free(coeff);
 	free(historyInput);
+	free(cpu_out);
 
 
 	return 0;
