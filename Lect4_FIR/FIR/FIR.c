@@ -162,8 +162,8 @@ int main(int argc , char** argv) {
 	if(ret != CL_SUCCESS)
 	{
 		cl_build_status build_status;
-		clGetProgramBuildInfo(*program, 
-				              dev, 
+		clGetProgramBuildInfo(program, 
+				              device_id, 
 							  CL_PROGRAM_BUILD_STATUS, 
 							  sizeof(cl_build_status), 
 							  &build_status, 
@@ -175,8 +175,8 @@ int main(int argc , char** argv) {
 		}
 
 		size_t ret_val_size;
-		clGetProgramBuildInfo(*program, 
-				              dev, 
+		clGetProgramBuildInfo(program, 
+				              device_id, 
 							  CL_PROGRAM_BUILD_LOG, 
 							  0, 
 							  NULL, 
@@ -190,7 +190,7 @@ int main(int argc , char** argv) {
 			exit(1);
 		}
 
-		clGetProgramBuildInfo(*program, dev, CL_PROGRAM_BUILD_LOG, ret_val_size+1, build_log, NULL);
+		clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, ret_val_size+1, build_log, NULL);
 		build_log[ret_val_size] = '\0';
 
 		printf("Build log:\n %s...\n", build_log);
