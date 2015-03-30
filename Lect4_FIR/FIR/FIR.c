@@ -159,7 +159,42 @@ int main(int argc , char** argv) {
 
 	// Build the program
 	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+	if(ret != CL_SUCCESS)
+	{
+		cl_build_status build_status;
+		clGetProgramBuildInfo(*program, 
+				              dev, 
+							  CL_PROGRAM_BUILD_STATUS, 
+							  sizeof(cl_build_status), 
+							  &build_status, 
+							  NULL);
 
+		if(build_status == CL_SUCCESS) 
+		{
+			printf("No compilation errors for this device\n");
+		}
+
+		size_t ret_val_size;
+		clGetProgramBuildInfo(*program, 
+				              dev, 
+							  CL_PROGRAM_BUILD_LOG, 
+							  0, 
+							  NULL, 
+							  &ret_val_size);
+
+		char* build_log = NULL;
+		build_log = (char *)malloc(ret_val_size+1);
+		if(build_log == NULL)
+		{
+			perror("malloc");
+			exit(1);
+		}
+
+		clGetProgramBuildInfo(*program, dev, CL_PROGRAM_BUILD_LOG, ret_val_size+1, build_log, NULL);
+		build_log[ret_val_size] = '\0';
+
+		printf("Build log:\n %s...\n", build_log);
+	}
 	CHECK_STATUS( ret,"Error: Build Program\n");
 
 	// Create the OpenCL kernel
