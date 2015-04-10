@@ -131,7 +131,7 @@ int CreateCommandQueue(cl_command_queue *cmd_q, cl_context ctx,
 int CreateProgram(cl_program *program, cl_context ctx, cl_device_id dev)
 {
 	// Convert the contents of a file into a string
-	const char *filename  = "kernel_mm.cl";
+	const char *filename  = "kernel.cl";
 	FILE *f = fopen(filename, "r");
 	assert(f);
 	fseek(f, 0, SEEK_END);
@@ -211,10 +211,7 @@ int CreateKernel(cl_kernel *kernel, cl_context ctx, cl_program program)
 {
 	cl_int status = 0;
 
-	kernel[0] = clCreateKernel(program, "MatrixMult_naive", &status);
-	assert(status == CL_SUCCESS);
-
-	kernel[1] = clCreateKernel(program, "MatrixMult_opt", &status);
+	kernel[0] = clCreateKernel(program, "matrix_transpose", &status);
 	assert(status == CL_SUCCESS);
 
 	return 0;
@@ -223,14 +220,17 @@ int CreateKernel(cl_kernel *kernel, cl_context ctx, cl_program program)
 /*
  * \brief Enqueue a kernel run call. Wait till it completes.
  */
-int RunKernel(cl_command_queue cmd_q, cl_kernel kernel, int hA, int wB, const char *info)
+int RunKernel(cl_command_queue cmd_q, cl_kernel kernel, int hA, int wA, const char *info)
 {
 	printf("\nStart executing %s\n", info);
-	int hC = hA;
-	int wC = wB;
 
-	const size_t local_size[2]  = {16, 16};
-	const size_t global_size[2] = {(wC + 15) / 16 * 16, (hC + 15) / 16 * 16};
+	// customize your tile size here
+	// Input Matrix [hA][wA]
+	// Output Matrix [wA][hA]
+	// dim x : hA (col)	
+	// dim y : WA (row)	
+	const size_t local_size[2]  = {16, 16};  
+	const size_t global_size[2] = {(hA + 15) / 16 * 16, (wA + 15) / 16 * 16};
 
 	cl_int status = clEnqueueNDRangeKernel(
 			cmd_q,
@@ -255,18 +255,36 @@ int RunKernel(cl_command_queue cmd_q, cl_kernel kernel, int hA, int wB, const ch
 
 
 /*
+ * \brief Compute Matrix Transpose on CPU.
+ */
+void cpu_transpose(float *a, float *aT, int hA, int wA)
+{
+	// dim for a : hA x wA
+	// dim for aT : wA x hA
+	int row, col;
+	for(row = 0; row < hA; row++)
+	{
+		for(col = 0; col < wA; col++) 
+		{
+			// aT[col][row] = a[row][col];
+			aT[col * hA + row] = a[row * wA + col];
+		}
+	}
+}
+
+/*
  * \brief Check results from device.
  */
-int Check(float *c_host, float *c_ref, int hC, int wC)
+int Check(float *a_host, float *a_ref, int hA, int wA)
 {
 	bool passed = true;
 
 	int i, j;
-	for (i = 0; i < hC; ++i)
+	for (i = 0; i < hA; ++i)
 	{
-		for (j = 0; j < wC; ++j)
+		for (j = 0; j < wA; ++j)
 		{
-			if (fabs(c_host[i * wC + j] - c_ref[i * wC + j]) > 1e-5)
+			if (fabs(a_host[i * wA + j] - a_ref[i * wA + j]) > 1e-5)
 			{
 				passed = false;
 				break;
@@ -286,117 +304,80 @@ int Check(float *c_host, float *c_ref, int hC, int wC)
 	return 0;
 }
 
-/*
- * \brief Compute Matrix Multiplication on CPU.
- */
-void cpu_mm(float *a, float *b, float *c, int hA, int wA, int wB)
-{
-	int wC = wB;
-	int hC = hA;
 
-	int i, j, k;
-	for(i=0; i<hC; ++i)
-	{
-		for(j=0; j<wC; ++j)
-		{
-			// c[i][j] = sum over a[i][k] * b[k][j]
-			float sum = 0.f;
-			for(k=0; k<wA; ++k)
-			{
-				sum += a[i * wA + k] * b[k * wB + j];
-			}
-			c[i * wC + j] = sum;
-		}
-	}
-}
-
+//----------------------------------------------------------------------------//
+//	Main Function
+//----------------------------------------------------------------------------//
 int main(int argc, char *argv[])
 {
 	printf("Start Program.\n");
 	cl_int status;
 
-	// fixed dim: 320 x 320
+	//------------------------------------------------------------------------//
+	// Input Matrix
+	//------------------------------------------------------------------------//
 	int wA = 320;
 	int hA = 320;
 	size_t bytes_a = wA * hA * sizeof(float);
 	float *a_host = (float *) malloc(bytes_a);
 	assert(a_host);
 
-	// fixed dim: 320 x 640
-	int wB = 640;
-	int hB = wA;
-	size_t bytes_b = wB * hB * sizeof(float);
-	float *b_host = (float *) malloc(bytes_b);
-	assert(b_host);
+	float *aT_host = (float *) malloc(bytes_a); // transposed output
+	assert(aT_host);
 
-	// 320 x 640
-	int wC = wB;
-	int hC = hA;
-	size_t bytes_c = wC * hC * sizeof(float);
-	float *c_host_k0 = (float *) malloc(bytes_c);
-	assert(c_host_k0);
-
-	float *c_host_k1 = (float *) malloc(bytes_c);
-	assert(c_host_k1);
 
 	// Initialize matrix a and b
 	int i;
 	for (i = 0; i < wA * hA; ++i)
 	{
-		a_host[i] = 0.1f;
+		a_host[i] = (float) i;
 	}
 
-	for (i = 0; i < wB * hB; ++i)
-	{
-		b_host[i] = 1.f;
-	}
-
-	float *c_ref = (float *) malloc(bytes_c);
-	assert(c_ref);
+	// CPU transposed results
+	float *aT_ref = (float *) malloc(bytes_a);
+	assert(aT_ref);
 
 	// Compute on CPU
-	printf("\nComputing Matrix Multiplication on CPU\n");
-	cpu_mm(a_host, b_host, c_ref, hA, wA, wB);
+	printf("\nComputing Matrix Transpose on CPU\n");
+	cpu_transpose(a_host, aT_ref, hA, wA);
 	printf("Done.\n");
 
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 1 Get platform
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	cl_platform_id platform = NULL;
 	GetPlatform(&platform);
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 2 Create context using the platform selected
 	//        Context created from type includes all available
 	//        devices of the specified type from the selected platform
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	cl_context ctx = NULL;
 	CreateContext(&ctx, platform);
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 3 Get device
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	cl_device_id device = NULL;
 	GetDevice(&device, ctx);
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 4 Create command queue for a single device
 	//        Each device in the context can have a 
 	//        dedicated command queue object for itself
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	cl_command_queue cmd_q = NULL;
 	CreateCommandQueue(&cmd_q, ctx, device);
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 5 Create device buffer and write the inputs to GPU
 	//        These buffer objects can be passed to the kernel
 	//        as kernel arguments
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	cl_mem a_dev = NULL;
-	cl_mem b_dev = NULL;
-	cl_mem c_dev_k0 = NULL;
-	cl_mem c_dev_k1 = NULL;
+	cl_mem aT_dev = NULL;
 
 	a_dev = clCreateBuffer(
 			ctx, 
@@ -406,30 +387,14 @@ int main(int argc, char *argv[])
 			&status);
 	assert(status == CL_SUCCESS);
 
-	b_dev = clCreateBuffer(
+	aT_dev = clCreateBuffer(
 			ctx, 
-			CL_MEM_READ_ONLY,
-			bytes_b,
+			CL_MEM_READ_WRITE,
+			bytes_a,
 			NULL, 
 			&status);
 	assert(status == CL_SUCCESS);
 
-	c_dev_k0 = clCreateBuffer(
-			ctx, 
-			CL_MEM_READ_WRITE,
-			bytes_c,
-			NULL, 
-			&status);
-	assert(status == CL_SUCCESS);
-
-	c_dev_k1 = clCreateBuffer(
-			ctx, 
-			CL_MEM_READ_WRITE,
-			bytes_c,
-			NULL, 
-			&status);
-	assert(status == CL_SUCCESS);
-	
 	// Transfer data to device
 	status = clEnqueueWriteBuffer(
 			 cmd_q,
@@ -443,124 +408,74 @@ int main(int argc, char *argv[])
 			 NULL);
 	assert(status == CL_SUCCESS);
 
-	status = clEnqueueWriteBuffer(
-			 cmd_q,
-			 b_dev,
-			 CL_TRUE,
-			 0,
-			 bytes_b,
-			 b_host,
-			 0,
-			 NULL,
-			 NULL);
-	assert(status == CL_SUCCESS);
-
 	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 6 Get program and kernel
+	//------------------------------------------------------------------------//
 	////////////////////////////////////////////////////////////////////
 	cl_program program = NULL;
 	CreateProgram(&program, ctx, device);
 
-	cl_kernel kernel[2];
+	cl_kernel kernel[1];
 	CreateKernel(kernel, ctx, program);
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 7 Set kernel arguments
-	////////////////////////////////////////////////////////////////////
-	
-	// naive version
+	//------------------------------------------------------------------------//
 	status = clSetKernelArg(kernel[0], 0, sizeof(cl_mem), (void *)&a_dev);
 	assert(status == CL_SUCCESS);
 
-	status = clSetKernelArg(kernel[0], 1, sizeof(cl_mem), (void *)&b_dev);
+	status = clSetKernelArg(kernel[0], 1, sizeof(cl_mem), (void *)&aT_dev);
 	assert(status == CL_SUCCESS);
 
-	status = clSetKernelArg(kernel[0], 2, sizeof(cl_mem), (void *)&c_dev_k0);
+	status = clSetKernelArg(kernel[0], 2, sizeof(int), (void *)&hA);
 	assert(status == CL_SUCCESS);
 
 	status = clSetKernelArg(kernel[0], 3, sizeof(int), (void *)&wA);
 	assert(status == CL_SUCCESS);
 
-	status = clSetKernelArg(kernel[0], 4, sizeof(int), (void *)&wB);
-	assert(status == CL_SUCCESS);
 
-	// optimized version
-	status = clSetKernelArg(kernel[1], 0, sizeof(cl_mem), (void *)&a_dev);
-	assert(status == CL_SUCCESS);
-
-	status = clSetKernelArg(kernel[1], 1, sizeof(cl_mem), (void *)&b_dev);
-	assert(status == CL_SUCCESS);
-
-	status = clSetKernelArg(kernel[1], 2, sizeof(cl_mem), (void *)&c_dev_k1);
-	assert(status == CL_SUCCESS);
-
-	status = clSetKernelArg(kernel[1], 3, sizeof(int), (void *)&wA);
-	assert(status == CL_SUCCESS);
-
-	status = clSetKernelArg(kernel[1], 4, sizeof(int), (void *)&wB);
-	assert(status == CL_SUCCESS);
-
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 8 Enqueue a kernel run call
 	//        Wait till the kernel completes
-	////////////////////////////////////////////////////////////////////
-	RunKernel(cmd_q, kernel[0], hA, wB, "naive kernel");
+	//------------------------------------------------------------------------//
+	RunKernel(cmd_q, kernel[0], hA, wA, "matrix transpose kernel");
 
 
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 9 Enqueue a command to read the output back from GPU
 	//        Wait till the readback completes
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	status = clEnqueueReadBuffer(
 			cmd_q,
-			c_dev_k0,
+			aT_dev,
 			CL_TRUE,
 			0,
-			bytes_c,
-			c_host_k0,
+			bytes_a,
+			aT_host,
 			0,
 			NULL,
 			NULL);
 	assert(status == CL_SUCCESS);
 
 	// Verify output
-	Check(c_host_k0, c_ref, hC, wC);
+	Check(aT_host, aT_ref, wA, hA);
 
 
-	RunKernel(cmd_q, kernel[1], hA, wB, "optimized kernel");
-
-	status = clEnqueueReadBuffer(
-			cmd_q,
-			c_dev_k1,
-			CL_TRUE,
-			0,
-			bytes_c,
-			c_host_k1,
-			0,
-			NULL,
-			NULL);
-	assert(status == CL_SUCCESS);
-
-	// Verify output
-	Check(c_host_k1, c_ref, hC, wC);
-
-	////////////////////////////////////////////////////////////////////
+	//------------------------------------------------------------------------//
 	// STEP 10  Clean up the OpenCL resources
-	////////////////////////////////////////////////////////////////////
-	status = clReleaseMemObject(c_dev_k0);
-	assert(status == CL_SUCCESS);
-	status = clReleaseMemObject(c_dev_k1);
-	assert(status == CL_SUCCESS);
-	status = clReleaseMemObject(b_dev);
-	assert(status == CL_SUCCESS);
+	//------------------------------------------------------------------------//
 	status = clReleaseMemObject(a_dev);
 	assert(status == CL_SUCCESS);
+	status = clReleaseMemObject(aT_dev);
+	assert(status == CL_SUCCESS);
 
-	for(i=0; i<2; ++i)
+	for(i=0; i<1; ++i)
 	{
 		status = clReleaseKernel(kernel[i]);
 		assert(status == CL_SUCCESS);
 	}
+
 	status = clReleaseProgram(program);
 	assert(status == CL_SUCCESS);
 	status = clReleaseCommandQueue(cmd_q);
@@ -569,16 +484,13 @@ int main(int argc, char *argv[])
 	assert(status == CL_SUCCESS);
 
 	// Release host resources
-	free(c_host_k0);
-	c_host_k0 = NULL;
-	free(c_host_k1);
-	c_host_k1 = NULL;
-	free(b_host);
-	b_host = NULL;
 	free(a_host);
-	a_host = NULL;
-	free(c_ref);
-	c_ref = NULL;
+	free(aT_host);
+	free(aT_ref);
+
+	a_host  = NULL;
+	aT_host = NULL;
+	aT_ref  = NULL;
 
 	printf("\nEnd of program.\n");
 
